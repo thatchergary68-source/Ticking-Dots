@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ticking Dots</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --border: #1e1e2e;
+    --dot-safe: #00f5a0;
+    --dot-warning: #ffcc00;
+    --dot-danger: #ff3c3c;
+    --catcher: #00cfff;
+    --accent: #ff3c3c;
+    --text: #e0e0f0;
+    --muted: #555570;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    user-select: none;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  #hud {
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .hud-block { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .hud-label { font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+  .hud-value { font-family: 'Orbitron', sans-serif; font-size: 18px; font-weight: 700; color: var(--text); }
+  #title-text { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 900; color: var(--accent); letter-spacing: 3px; }
+
+  #timer-bar-wrap {
+    width: 100%;
+    max-width: 600px;
+    height: 4px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  #timer-bar {
+    height: 100%;
+    background: var(--dot-safe);
+    width: 100%;
+    transition: background 0.3s;
+  }
+
+  #arena {
+    width: 100%;
+    max-width: 600px;
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: none;
+  }
+
+  /* Grid lines background */
+  #arena::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,207,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,207,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  .dot {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--dot-safe);
+    box-shadow: 0 0 8px var(--dot-safe);
+    transition: background 0.3s, box-shadow 0.3s;
+    pointer-events: none;
+  }
+  .dot.warning {
+    background: var(--dot-warning);
+    box-shadow: 0 0 10px var(--dot-warning);
+    animation: pulse-warn 0.5s infinite alternate;
+  }
+  .dot.danger {
+    background: var(--dot-danger);
+    box-shadow: 0 0 14px var(--dot-danger);
+    animation: pulse-danger 0.25s infinite alternate;
+  }
+
+  @keyframes pulse-warn {
+    from { transform: scale(1); }
+    to { transform: scale(1.2); }
+  }
+  @keyframes pulse-danger {
+    from { transform: scale(1); opacity: 1; }
+    to { transform: scale(1.35); opacity: 0.7; }
+  }
+
+  /* Catcher */
+  #catcher {
+    position: absolute;
+    bottom: 12px;
+    width: 90px;
+    height: 16px;
+    background: var(--catcher);
+    border-radius: 8px;
+    box-shadow: 0 0 16px var(--catcher), 0 0 32px rgba(0,207,255,0.3);
+    transform: translateX(-50%);
+    pointer-events: none;
+    transition: left 0.05s linear;
+  }
+
+  /* Explosion */
+  .explosion {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, #ff3c3c 40%, transparent 70%);
+    transform: translate(-50%, -50%) scale(0);
+    animation: explode 0.5s forwards;
+    pointer-events: none;
+    z-index: 10;
+  }
+  @keyframes explode {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+    60% { transform: translate(-50%, -50%) scale(1.5); opacity: 0.9; }
+    100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+  }
+
+  /* Catch flash */
+  .catch-flash {
+    position: absolute;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff 0%, var(--dot-safe) 50%, transparent 70%);
+    transform: translate(-50%, -50%) scale(0);
+    animation: catch-pop 0.3s forwards;
+    pointer-events: none;
+    z-index: 10;
+  }
+  @keyframes catch-pop {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+  }
+
+  /* Screens */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: rgba(10,10,15,0.92);
+    z-index: 50;
+    padding: 20px;
+    text-align: center;
+  }
+
+  .screen h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(28px, 6vw, 48px);
+    font-weight: 900;
+    color: var(--accent);
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(255,60,60,0.5);
+  }
+  .screen h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(20px, 4vw, 32px);
+    font-weight: 700;
+    color: var(--dot-safe);
+    letter-spacing: 3px;
+    text-shadow: 0 0 16px rgba(0,245,160,0.5);
+  }
+  .screen p { font-size: 13px; color: var(--muted); line-height: 1.7; max-width: 340px; }
+  .screen .big-stat { font-family: 'Orbitron', sans-serif; font-size: 48px; font-weight: 900; color: var(--text); }
+
+  .btn {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 12px 32px;
+    background: transparent;
+    border: 2px solid var(--catcher);
+    color: var(--catcher);
+    cursor: pointer;
+    border-radius: 4px;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    margin-top: 8px;
+  }
+  .btn:hover {
+    background: var(--catcher);
+    color: var(--bg);
+    box-shadow: 0 0 20px var(--catcher);
+  }
+
+  .instructions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    max-width: 360px;
+    margin: 4px 0;
+  }
+  .inst-item {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: left;
+    line-height: 1.6;
+  }
+  .inst-item span { color: var(--text); display: block; margin-bottom: 2px; font-size: 12px; }
+
+  #warning-flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,60,60,0.15);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 5;
+  }
+  #warning-flash.on { animation: flash-red 0.4s; }
+  @keyframes flash-red {
+    0%,100% { opacity: 0; }
+    50% { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="hud-block">
+    <div class="hud-label">Caught</div>
+    <div class="hud-value" id="caught-display">0</div>
+  </div>
+  <div id="title-text">TICKING DOTS</div>
+  <div class="hud-block">
+    <div class="hud-label">Remaining</div>
+    <div class="hud-value" id="remaining-display">50</div>
+  </div>
+</div>
+
+<div id="timer-bar-wrap"><div id="timer-bar"></div></div>
+
+<div id="arena">
+  <div id="warning-flash"></div>
+  <div id="catcher"></div>
+
+  <!-- Start Screen -->
+  <div class="screen" id="start-screen">
+    <h1>TICKING DOTS</h1>
+    <p>50 dots fall from above. Catch them all with your paddle before they explode. Any dot can blow at any moment — lose it all in a flash.</p>
+    <div class="instructions">
+      <div class="inst-item"><span>Move</span>Mouse or touch left/right</div>
+      <div class="inst-item"><span>Goal</span>Catch all 50 dots</div>
+      <div class="inst-item"><span>Warning</span>Dots flash when near explode</div>
+      <div class="inst-item"><span>Danger</span>One explosion = game over</div>
+    </div>
+    <button class="btn" id="start-btn">Start Game</button>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div class="screen" id="gameover-screen" style="display:none">
+    <h1>BOOM!</h1>
+    <p style="color:var(--muted);font-size:12px">A dot exploded before you caught it.</p>
+    <div class="big-stat" id="final-caught">0</div>
+    <p>dots caught out of 50</p>
+    <button class="btn" id="retry-btn">Try Again</button>
+  </div>
+
+  <!-- Win Screen -->
+  <div class="screen" id="win-screen" style="display:none">
+    <h2>YOU WIN!</h2>
+    <p style="color:var(--muted);font-size:12px">All 50 dots caught. Impressive reflexes.</p>
+    <div class="big-stat" style="color:var(--dot-safe)">50</div>
+    <p>perfect catch</p>
+    <button class="btn" id="win-retry-btn">Play Again</button>
+  </div>
+</div>
+
+<script>
+const arena = document.getElementById('arena');
+const catcher = document.getElementById('catcher');
+const caughtDisplay = document.getElementById('caught-display');
+const remainingDisplay = document.getElementById('remaining-display');
+const timerBar = document.getElementById('timer-bar');
+const warningFlash = document.getElementById('warning-flash');
+
+let dots = [];
+let caught = 0;
+let totalSpawned = 0;
+let gameRunning = false;
+let animFrame;
+let spawnTimer = 0;
+let catcherX = 200;
+let arenaW, arenaH;
+
+const TOTAL_DOTS = 50;
+const CATCHER_W = 90;
+const DOT_R = 9;
+const FALL_SPEED_MIN = 1.8;
+const FALL_SPEED_MAX = 3.2;
+// Explode time: 5-18 seconds (medium difficulty)
+const EXPLODE_MIN = 5000;
+const EXPLODE_MAX = 18000;
+const SPAWN_INTERVAL_MIN = 600;
+const SPAWN_INTERVAL_MAX = 1400;
+
+function resize() {
+  arenaW = arena.offsetWidth;
+  arenaH = arena.offsetHeight;
+}
+
+function rand(min, max) { return Math.random() * (max - min) + min; }
+
+function spawnDot() {
+  if (totalSpawned >= TOTAL_DOTS) return;
+  totalSpawned++;
+  const el = document.createElement('div');
+  el.className = 'dot';
+  const x = rand(DOT_R + 5, arenaW - DOT_R - 5);
+  let y = -DOT_R * 2;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+
+  const explodeAt = Date.now() + rand(EXPLODE_MIN, EXPLODE_MAX);
+  const speed = rand(FALL_SPEED_MIN, FALL_SPEED_MAX);
+
+  const dot = { el, x, y, speed, explodeAt, exploded: false, caught: false };
+  dots.push(dot);
+  arena.appendChild(el);
+}
+
+function triggerExplosion(dot) {
+  dot.exploded = true;
+  dot.el.remove();
+
+  const exp = document.createElement('div');
+  exp.className = 'explosion';
+  exp.style.left = dot.x + 'px';
+  exp.style.top = dot.y + 'px';
+  arena.appendChild(exp);
+  setTimeout(() => exp.remove(), 600);
+
+  warningFlash.classList.remove('on');
+  void warningFlash.offsetWidth;
+  warningFlash.classList.add('on');
+
+  setTimeout(endGame, 300);
+}
+
+function catchDot(dot) {
+  dot.caught = true;
+  dot.el.remove();
+
+  const flash = document.createElement('div');
+  flash.className = 'catch-flash';
+  flash.style.left = dot.x + 'px';
+  flash.style.top = dot.y + 'px';
+  arena.appendChild(flash);
+  setTimeout(() => flash.remove(), 350);
+
+  caught++;
+  caughtDisplay.textContent = caught;
+  remainingDisplay.textContent = Math.max(0, TOTAL_DOTS - caught);
+
+  if (caught >= TOTAL_DOTS) {
+    setTimeout(showWin, 200);
+  }
+}
+
+function updateTimerBar() {
+  // Show urgency based on most dangerous dot
+  const now = Date.now();
+  let minRemaining = Infinity;
+  dots.forEach(d => {
+    if (!d.caught && !d.exploded) {
+      const rem = d.explodeAt - now;
+      if (rem < minRemaining) minRemaining = rem;
+    }
+  });
+  if (minRemaining === Infinity) {
+    timerBar.style.width = '100%';
+    timerBar.style.background = 'var(--dot-safe)';
+    return;
+  }
+  const pct = Math.max(0, Math.min(1, minRemaining / EXPLODE_MAX));
+  timerBar.style.width = (pct * 100) + '%';
+  if (pct > 0.5) timerBar.style.background = 'var(--dot-safe)';
+  else if (pct > 0.25) timerBar.style.background = 'var(--dot-warning)';
+  else timerBar.style.background = 'var(--dot-danger)';
+}
+
+function gameLoop(ts) {
+  if (!gameRunning) return;
+  const now = Date.now();
+
+  // Spawn
+  if (totalSpawned < TOTAL_DOTS) {
+    spawnTimer -= 16;
+    if (spawnTimer <= 0) {
+      spawnDot();
+      spawnTimer = rand(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_MAX);
+    }
+  }
+
+  // Update dots
+  for (let i = dots.length - 1; i >= 0; i--) {
+    const d = dots[i];
+    if (d.caught || d.exploded) { dots.splice(i, 1); continue; }
+
+    d.y += d.speed;
+    d.el.style.top = d.y + 'px';
+
+    // Time-based color warning
+    const timeLeft = d.explodeAt - now;
+    if (timeLeft < 2500) {
+      d.el.className = 'dot danger';
+    } else if (timeLeft < 5000) {
+      d.el.className = 'dot warning';
+    }
+
+    // Explode check
+    if (now >= d.explodeAt) {
+      triggerExplosion(d);
+      dots.splice(i, 1);
+      return;
+    }
+
+    // Missed (fell past bottom)
+    if (d.y > arenaH + 20) {
+      d.el.remove();
+      dots.splice(i, 1);
+      totalSpawned = Math.min(totalSpawned, TOTAL_DOTS);
+      continue;
+    }
+
+    // Catch check
+    const catcherLeft = catcherX - CATCHER_W / 2;
+    const catcherTop = arenaH - 28;
+    if (
+      d.y + DOT_R >= catcherTop &&
+      d.y - DOT_R <= catcherTop + 16 &&
+      d.x >= catcherLeft &&
+      d.x <= catcherLeft + CATCHER_W
+    ) {
+      catchDot(d);
+      dots.splice(i, 1);
+      continue;
+    }
+  }
+
+  updateTimerBar();
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+  resize();
+  dots = [];
+  caught = 0;
+  totalSpawned = 0;
+  spawnTimer = 300;
+  gameRunning = true;
+  caughtDisplay.textContent = '0';
+  remainingDisplay.textContent = TOTAL_DOTS;
+  timerBar.style.width = '100%';
+  timerBar.style.background = 'var(--dot-safe)';
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('gameover-screen').style.display = 'none';
+  document.getElementById('win-screen').style.display = 'none';
+  catcherX = arenaW / 2;
+  catcher.style.left = catcherX + 'px';
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  gameRunning = false;
+  cancelAnimationFrame(animFrame);
+  dots.forEach(d => { if (!d.caught && !d.exploded) d.el.remove(); });
+  dots = [];
+  document.getElementById('final-caught').textContent = caught;
+  document.getElementById('gameover-screen').style.display = 'flex';
+}
+
+function showWin() {
+  gameRunning = false;
+  cancelAnimationFrame(animFrame);
+  document.getElementById('win-screen').style.display = 'flex';
+}
+
+// Controls
+arena.addEventListener('mousemove', e => {
+  const rect = arena.getBoundingClientRect();
+  catcherX = Math.max(CATCHER_W / 2, Math.min(arenaW - CATCHER_W / 2, e.clientX - rect.left));
+  catcher.style.left = catcherX + 'px';
+});
+
+arena.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const rect = arena.getBoundingClientRect();
+  const touch = e.touches[0];
+  catcherX = Math.max(CATCHER_W / 2, Math.min(arenaW - CATCHER_W / 2, touch.clientX - rect.left));
+  catcher.style.left = catcherX + 'px';
+}, { passive: false });
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('retry-btn').addEventListener('click', startGame);
+document.getElementById('win-retry-btn').addEventListener('click', startGame);
+
+window.addEventListener('resize', resize);
+resize();
+</script>
+</body>
+</html>
